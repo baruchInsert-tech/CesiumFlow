@@ -1,4 +1,4 @@
-name: Build project
+name: Build Unity Project with Cesium
 
 on:
   push:
@@ -8,7 +8,8 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  # This job remains the same. It checks for the necessary Unity license secret.
+  # This job checks if the required Unity license secret is available.
+  # The main build job will only run if this job succeeds and finds the license.
   checklicense:
     name: Check for UNITY_LICENSE in GitHub Secrets
     runs-on: ubuntu-latest
@@ -19,46 +20,72 @@ jobs:
         id: checklicense_job
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
         run: |
           if [[ -n "${UNITY_LICENSE}" ]]; then
             echo "is_unity_license_set=true" >> $GITHUB_OUTPUT
           else
             echo "is_unity_license_set=false" >> $GITHUB_OUTPUT
+            echo "UNITY_LICENSE secret is not set. Skipping build."
           fi
 
-  # This job now runs on a Windows environment.
+  # This is the main build job.
   buildForAllSupportedPlatforms:
     name: Build for ${{ matrix.targetPlatform }}
     needs: checklicense
+    # Only run this job if the UNITY_LICENSE secret is present.
     if: needs.checklicense.outputs.is_unity_license_set == 'true'
-    # MODIFICATION: Switched from 'ubuntu-latest' to 'windows-latest'.
-    # This is the crucial change to support Cesium for Unity's native components.
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         targetPlatform:
           - StandaloneWindows64 # Build a Windows 64-bit standalone.
+          # You can add other platforms here, e.g., StandaloneLinux64, Android
     steps:
-      # Checkout your project repository
-      - uses: actions/checkout@v4
+      # Step 1: Check out the repository code.
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           lfs: true
 
-      # Cache the Unity Library folder to speed up subsequent builds
-      - uses: actions/cache@v3
+      # Step 2: Restore the Unity Library cache to speed up builds.
+      - name: Cache Unity Library
+        uses: actions/cache@v3
         with:
           path: Library
           key: Library-${{ matrix.targetPlatform }}
           restore-keys: Library-
 
-      # Use the GameCI Unity Builder action to build the project.
-      # This action works on Windows and will correctly build the project
-      # with the Cesium UPM package included.
-      - uses: game-ci/unity-builder@v4
+      # (Optional) Step for freeing up disk space if building for Android.
+      - name: Free disk space for Android build
+        if: matrix.targetPlatform == 'Android'
+        uses: jlumbroso/free-disk-space@v1.3.1
+
+      # Step 3: Setup .NET SDK (Required for Cesium)
+      # Cesium for Unity requires a .NET SDK to build its native interop libraries.
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '6.0.x' # Using .NET 6, which is compatible.
+
+      # Step 4: Build Cesium's Reinterop Project
+      # This is the crucial step that compiles Cesium's native code components.
+      # The Unity build will fail without this.
+      - name: Build Cesium For Unity Reinterop
+        run: |
+          echo "Building the Cesium for Unity Reinterop library..."
+          # IMPORTANT: The path below assumes Cesium is installed via the Package Manager.
+          # If you have placed the Cesium package in the Assets folder, you may need to
+          # adjust the path to:
+          # Assets/Plugins/CesiumForUnity/native~/Projects/CesiumForUnity.Reinterop/CesiumForUnity.Reinterop.csproj
+          dotnet publish Packages/com.cesium.unity/native~/Projects/CesiumForUnity.Reinterop/CesiumForUnity.Reinterop.csproj --configuration Release
+
+      # Step 5: Build the Unity Project
+      # This uses the game-ci/unity-builder action to perform the main build.
+      # It will now find the pre-compiled Cesium libraries from the previous step.
+      - name: Build with Unity
+        uses: game-ci/unity-builder@v4
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
@@ -66,8 +93,10 @@ jobs:
         with:
           targetPlatform: ${{ matrix.targetPlatform }}
 
-      # Upload the finished build as a workflow artifact
-      - uses: actions/upload-artifact@v4
+      # Step 6: Upload the build artifact.
+      # This makes the compiled game available for download from the GitHub Actions run.
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
         with:
           name: Build-${{ matrix.targetPlatform }}
           path: build/${{ matrix.targetPlatform }}
