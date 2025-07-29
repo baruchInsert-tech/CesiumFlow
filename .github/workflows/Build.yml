@@ -78,11 +78,11 @@ jobs:
         shell: pwsh
 
       # Step 9: Build the native C++ libraries using CMake.
-      # Added /EHsc flag to enable C++ exception handling.
+      # Added flags to disable specific warnings that are treated as errors.
       - name: Build Cesium native libraries
         working-directory: ${{ matrix.projectPath }}/Packages/com.cesium.unity/native~
         run: |
-          cmake -B build -S . -DCMAKE_BUILD_TYPE=RelWithDebInfo -A x64 -DCMAKE_CXX_FLAGS="/WX- /EHsc" -DCMAKE_C_FLAGS="/WX- /EHsc"
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=RelWithDebInfo -A x64 -DCMAKE_CXX_FLAGS="/WX- /EHsc /wd4244 /wd4127 /wd4505" -DCMAKE_C_FLAGS="/WX- /EHsc /wd4244 /wd4127 /wd4505"
           cmake --build build --target install --config RelWithDebInfo --parallel 4
         shell: cmd
 
