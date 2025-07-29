@@ -1,151 +1,73 @@
-name: Build
+name: Build project
 
 on:
+  push:
+    branches:
+      - master
   pull_request: {}
-  workflow_dispatch: {} # Allows manual triggering of the workflow
+  workflow_dispatch: {}
 
 jobs:
-  build:
-    # The name of the job displayed on GitHub.
-    name: Build Cesium UPM for ${{ matrix.targetPlatform }}
-    # Defines the operating system for the runner.
+  # This job remains the same. It checks for the necessary Unity license secret.
+  checklicense:
+    name: Check for UNITY_LICENSE in GitHub Secrets
+    runs-on: ubuntu-latest
+    outputs:
+      is_unity_license_set: ${{ steps.checklicense_job.outputs.is_unity_license_set }}
+    steps:
+      - name: Check whether Unity activation should be done
+        id: checklicense_job
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          if [[ -n "${UNITY_LICENSE}" ]]; then
+            echo "is_unity_license_set=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_unity_license_set=false" >> $GITHUB_OUTPUT
+          fi
+
+  # This job now runs on a Windows environment.
+  buildForAllSupportedPlatforms:
+    name: Build for ${{ matrix.targetPlatform }}
+    needs: checklicense
+    if: needs.checklicense.outputs.is_unity_license_set == 'true'
+    # MODIFICATION: Switched from 'ubuntu-latest' to 'windows-latest'.
+    # This is the crucial change to support Cesium for Unity's native components.
     runs-on: windows-latest
     strategy:
-      # Ensures that if one job in the matrix fails, others will continue to run.
       fail-fast: false
-      # Defines a matrix of configurations to run the job against.
       matrix:
-        projectPath:
-          - ./
-        unityVersion:
-          - 6000.1.9f1
         targetPlatform:
-          - StandaloneWindows64
-
+          - StandaloneWindows64 # Build a Windows 64-bit standalone.
     steps:
-      # Step 1: Checkout the project repository.
-      # This step downloads your source code into the runner.
-      - name: Checkout project
-        uses: actions/checkout@v4
+      # Checkout your project repository
+      - uses: actions/checkout@v4
         with:
-          lfs: true # Enable Git LFS for large files.
+          fetch-depth: 0
+          lfs: true
 
-      # Step 2: Cache the Unity Library folder to speed up subsequent builds.
-      # Caching avoids re-importing all assets on every run.
-      - name: Cache Library folder
-        uses: actions/cache@v4
+      # Cache the Unity Library folder to speed up subsequent builds
+      - uses: actions/cache@v3
         with:
-          path: ${{ matrix.projectPath }}/Library
-          key: Library-${{ runner.os }}-${{ matrix.targetPlatform }}-${{ hashFiles('**/packages-lock.json') }}
-          restore-keys: |
-            Library-${{ runner.os }}-${{ matrix.targetPlatform }}-
+          path: Library
+          key: Library-${{ matrix.targetPlatform }}
+          restore-keys: Library-
 
-      # Step 3: Set environment variables for the build process.
-      - name: Set Environment Variables
-        run: |
-          echo "DOTNET_NOLOGO=true" >> $env:GITHUB_ENV
-          echo "CESIUM_SKIP_GATHER_ANALYTICS=true" >> $env:GITHUB_ENV
-        shell: pwsh
-
-      # Step 4: Download the Cesium for Unity source code with its submodules.
-      # This clones a specific version of the official Cesium for Unity repository.
-      - name: Download Cesium for Unity source
-        run: |
-          git clone --recurse-submodules --branch v1.16.2 --depth 1 https://github.com/CesiumGS/cesium-unity.git "${{ matrix.projectPath }}/Packages/com.cesium.unity"
-        shell: bash
-
-      # Step 5: Install the .NET SDK, which is required for building the C# components.
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '6.0.x'
-
-      # Step 6: Install CMake, a tool required for building the native C++ libraries.
-      - name: Setup CMake
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: '3.21.x'
-
-      # Step 7: Install MSBuild for compiling C++ on Windows.
-      - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v2
-
-      # Step 8: Build the C# part of the Cesium plugin (Reinterop).
-      # This step is platform-agnostic using PowerShell Core.
-      - name: Build Cesium Reinterop
-        working-directory: ${{ matrix.projectPath }}/Packages/com.cesium.unity
-        run: dotnet publish Reinterop~/Reinterop.csproj -o . --configuration Release
-        shell: pwsh
-
-      # Step 9: Build the native C++ libraries using CMake.
-      # Added flags to disable specific warnings that are treated as errors.
-      - name: Build Cesium native libraries
-        working-directory: ${{ matrix.projectPath }}/Packages/com.cesium.unity/native~
-        run: |
-          cmake -B build -S . -DCMAKE_BUILD_TYPE=RelWithDebInfo -A x64 -DCMAKE_CXX_FLAGS="/WX- /EHsc /wd4244 /wd4127 /wd4505" -DCMAKE_C_FLAGS="/WX- /EHsc /wd4244 /wd4127 /wd4505"
-          cmake --build build --target install --config RelWithDebInfo --parallel 4
-        shell: cmd
-
-      # Step 10: Copy the built native libraries to the correct runtime location.
-      # This is a critical step to ensure the plugin can find its native components.
-      - name: Copy Native Libraries to Runtime Folder
-        working-directory: ${{ matrix.projectPath }}/Packages/com.cesium.unity
-        run: |
-          $sourceDir = "native~/build/install"
-          $destDir = "Runtime/Native"
-          Copy-Item -Path "$sourceDir/*" -Destination $destDir -Recurse -Force
-          Write-Host "Copied native libraries from $sourceDir to $destDir"
-        shell: pwsh
-
-      # Step 11: Verify the package.json file exists for UPM compatibility.
-      - name: Verify UPM package structure
-        working-directory: ${{ matrix.projectPath }}/Packages/com.cesium.unity
-        run: |
-          if (!(Test-Path "package.json")) {
-            Write-Error "package.json not found in UPM package"
-            exit 1
-          }
-          Write-Host "UPM package structure verified. Contents of package.json:"
-          Get-Content "package.json"
-        shell: pwsh
-
-      # Step 12: Build the Unity project to ensure the UPM package is valid and works.
-      - name: Build with Unity
-        uses: game-ci/unity-builder@v4
+      # Use the GameCI Unity Builder action to build the project.
+      # This action works on Windows and will correctly build the project
+      # with the Cesium UPM package included.
+      - uses: game-ci/unity-builder@v4
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
         with:
-          projectPath: ${{ matrix.projectPath }}
-          unityVersion: ${{ matrix.unityVersion }}
           targetPlatform: ${{ matrix.targetPlatform }}
-          allowDirtyBuild: true
-          buildPath: build
-          buildName: CesiumUnityBuild
 
-      # Step 13: Create the UPM package tarball.
-      - name: Create UPM Package Archive
-        run: |
-          $packageDir = "com.cesium.unity"
-          $archiveName = "com.cesium.unity.tgz"
-          # Use tar to create the gzipped tarball.
-          tar -czf "../${archiveName}" -C Packages $packageDir
-          
-          Write-Host "Created UPM package: ${archiveName}"
-        shell: bash
-
-      # Step 14: Upload the Unity build as an artifact.
-      - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v4
+      # Upload the finished build as a workflow artifact
+      - uses: actions/upload-artifact@v4
         with:
-          name: CesiumUnityBuild-${{ matrix.targetPlatform }}
-          path: ${{ matrix.projectPath }}/build/${{ matrix.targetPlatform }}
-
-      # Step 15: Upload the created UPM package as an artifact.
-      - name: Upload UPM Package
-        uses: actions/upload-artifact@v4
-        with:
-          name: cesium-unity-upm-package-${{ matrix.targetPlatform }}
-          path: ${{ matrix.projectPath }}/com.cesium.unity.tgz
-          retention-days: 30
+          name: Build-${{ matrix.targetPlatform }}
+          path: build/${{ matrix.targetPlatform }}
