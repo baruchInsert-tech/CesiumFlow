@@ -58,9 +58,6 @@ ExportedObj/
 *.pdb.meta
 *.mdb.meta
 
-# Nuget
-/[Aa]ssets/[Pp]ackages/
-
 # Unity3D generated file on crash reports
 sysinfo.txt
 
