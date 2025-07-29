@@ -39,6 +39,7 @@ jobs:
           key: Library-${{ runner.os }}-${{ matrix.targetPlatform }}-${{ hashFiles('**/packages-lock.json') }}
           restore-keys: |
             Library-${{ runner.os }}-${{ matrix.targetPlatform }}-
+
       # Step 3: Set environment variables for the build process.
       - name: Set Environment Variables
         run: |
@@ -77,10 +78,11 @@ jobs:
         shell: pwsh
 
       # Step 9: Build the native C++ libraries using CMake.
+      # Added /EHsc flag to enable C++ exception handling.
       - name: Build Cesium native libraries
         working-directory: ${{ matrix.projectPath }}/Packages/com.cesium.unity/native~
         run: |
-          cmake -B build -S . -DCMAKE_BUILD_TYPE=RelWithDebInfo -A x64 -DCMAKE_CXX_FLAGS="/WX-" -DCMAKE_C_FLAGS="/WX-"
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=RelWithDebInfo -A x64 -DCMAKE_CXX_FLAGS="/WX- /EHsc" -DCMAKE_C_FLAGS="/WX- /EHsc"
           cmake --build build --target install --config RelWithDebInfo --parallel 4
         shell: cmd
 
