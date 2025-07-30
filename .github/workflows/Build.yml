@@ -32,7 +32,7 @@ jobs:
     name: Run Unity Tests
     needs: checklicense
     if: needs.checklicense.outputs.is_unity_license_set == 'true'
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - name: Checkout project
         uses: actions/checkout@v4
