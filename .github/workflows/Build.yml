@@ -32,7 +32,7 @@ jobs:
     name: Run Unity Tests
     needs: checklicense
     if: needs.checklicense.outputs.is_unity_license_set == 'true'
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout project
         uses: actions/checkout@v4
@@ -45,6 +45,8 @@ jobs:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          customParameters: -nographics -batchmode
 
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
@@ -56,7 +58,7 @@ jobs:
     name: Build for ${{ matrix.targetPlatform }}
     needs: [checklicense, test]
     if: needs.checklicense.outputs.is_unity_license_set == 'true' 
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -84,6 +86,7 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
         with:
           targetPlatform: ${{ matrix.targetPlatform }}
+          customParameters: -nographics -batchmode
 
       # Upload artifacts.
       - uses: actions/upload-artifact@v4
