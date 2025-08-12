@@ -2,11 +2,17 @@
 const fs = require('fs');
 const path = require('path');
 
+// OLD WAY - DELETE THIS LINE
+// const newVersion = process.env.NEXT_RELEASE_VERSION;
+
+// NEW WAY - ADD THIS LINE
+const newVersion = process.argv[2];
+
 const projectSettingsPath = path.join(__dirname, 'ProjectSettings', 'ProjectSettings.asset');
-const newVersion = process.env.NEXT_RELEASE_VERSION;
 
 if (!newVersion) {
-  console.error('NEXT_RELEASE_VERSION environment variable not set.');
+  // Update the error message for clarity
+  console.error('Error: No version number was passed to the update-unity-version.js script.');
   process.exit(1);
 }
 
