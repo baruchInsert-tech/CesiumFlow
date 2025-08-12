@@ -1,0 +1,20 @@
+name: Lint Commit Messages
+
+on: [push]
+
+jobs:
+  commitlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Fetch all history to compare against the main branch
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        run: npm install
+      - name: Validate all commits
+        # Replace 'main' with your default branch name if it's different (e.g., 'master')
+        run: npx commitlint --from=origin/main --to=HEAD --verbose
