@@ -2,7 +2,7 @@ name: release-please
 
 on:
   push:
-    branches: [ master ]     # your default branch is master
+    branches: [ main ]     # your default branch is master
   workflow_dispatch:         # let you run it manually
 
 permissions:
@@ -20,4 +20,4 @@ jobs:
           command: manifest
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-          target-branch: master
+          target-branch: main
